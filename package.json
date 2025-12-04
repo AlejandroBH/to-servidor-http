@@ -1,0 +1,13 @@
+{
+  "name": "servidor-http",
+  "version": "1.0.0",
+  "description": "",
+  "main": "api-tareas.js",
+  "scripts": {
+    "start": "node api-tareas"
+  },
+  "keywords": [],
+  "author": "Alejandro Barrera <alejandro91dark@hotmail.es>",
+  "license": "ISC",
+  "type": "commonjs"
+}
