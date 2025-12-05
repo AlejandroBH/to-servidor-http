@@ -47,6 +47,19 @@ const EsquemaTareaPUT = Joi.object({
   prioridad: Joi.string().valid("alta", "media", "baja").optional(),
 }).min(1);
 
+// Funcion para logging
+function logOperacion(metodo, ruta, statusCode, mensaje, error = false) {
+  const timestamp = new Date().toISOString();
+  const nivel = error ? "ERROR" : "INFO";
+  const logMensaje = `[${timestamp}] [${nivel}] ${metodo} ${ruta} -> ${statusCode} - ${mensaje}`;
+
+  if (error) {
+    console.error(`🔴 ${logMensaje}`);
+  } else {
+    console.log(`🟢 ${logMensaje}`);
+  }
+}
+
 // Funciones helper
 function enviarJSON(response, data, statusCode = 200) {
   response.writeHead(statusCode, {
@@ -102,6 +115,17 @@ async function validarEsquema(request, response, esquema) {
         mensaje: d.message,
       }));
 
+      // GENERA LOG
+      logOperacion(
+        method,
+        pathname,
+        400,
+        `Fallo de validación Joi: ${erroresDetallados
+          .map((e) => e.campo)
+          .join(", ")}`,
+        true
+      );
+
       enviarJSON(
         response,
         {
@@ -131,6 +155,8 @@ async function validarEsquema(request, response, esquema) {
         400
       );
     }
+    // GENERA LOG
+    logOperacion(method, pathname, statusCode, mensajeLog, true);
     return null;
   }
 }
@@ -161,6 +187,15 @@ function autenticarAPIKey(request, response, parsedUrl) {
   if (apiKey === API_KEY_SECRETA) {
     return true;
   } else {
+    // GENERA LOG
+    logOperacion(
+      method,
+      pathname,
+      401,
+      "Acceso no autorizado (API Key inválida)",
+      true
+    );
+
     enviarJSON(
       response,
       { error: "Acceso no autorizado. Se requiere una 'X-API-Key' válida." },
@@ -212,6 +247,16 @@ const servidor = http.createServer(async (request, response) => {
         total: resultados.length,
         tareas: resultados,
       });
+
+      // GENERA LOG
+      logOperacion(
+        method,
+        pathname,
+        200,
+        `Listando ${resultados.length} tareas (Filtros: ${
+          Object.keys(query).length > 0 ? JSON.stringify(query) : "Ninguno"
+        })`
+      );
       return;
     }
 
@@ -221,11 +266,23 @@ const servidor = http.createServer(async (request, response) => {
       const tarea = tareas.find((t) => t.id === id);
 
       if (!tarea) {
+        // GENERA LOG
+        logOperacion(
+          method,
+          pathname,
+          404,
+          `Tarea con ID ${id} no encontrada`,
+          true
+        );
+
         enviarJSON(response, { error: "Tarea no encontrada" }, 404);
         return;
       }
 
       enviarJSON(response, tarea);
+
+      // GENERA LOG
+      logOperacion(method, pathname, 200, `Tarea con ID ${id} recuperada`);
       return;
     }
 
@@ -245,6 +302,14 @@ const servidor = http.createServer(async (request, response) => {
 
       tareas.push(nuevaTarea);
       enviarJSON(response, nuevaTarea, 201);
+
+      // GENERA LOG
+      logOperacion(
+        method,
+        pathname,
+        201,
+        `Tarea creada con ID ${nuevaTarea.id}`
+      );
       return;
     }
 
@@ -257,6 +322,15 @@ const servidor = http.createServer(async (request, response) => {
 
       const indice = tareas.findIndex((t) => t.id === id);
       if (indice === -1) {
+        // GENERA LOG
+        logOperacion(
+          method,
+          pathname,
+          404,
+          `Tarea con ID ${id} no encontrada para actualizar`,
+          true
+        );
+
         enviarJSON(response, { error: "Tarea no encontrada" }, 404);
         return;
       }
@@ -264,6 +338,15 @@ const servidor = http.createServer(async (request, response) => {
       // Si el esquema está vacío, Joi.min(1) debería haber fallado
       // Pero para mayor seguridad:
       if (Object.keys(data).length === 0) {
+        // GENERA LOG
+        logOperacion(
+          method,
+          pathname,
+          400,
+          "Solicitud de actualización sin campos",
+          true
+        );
+
         enviarJSON(
           response,
           { error: "Debe proporcionar al menos un campo para actualizar" },
@@ -277,6 +360,16 @@ const servidor = http.createServer(async (request, response) => {
       tareas[indice] = tareaActualizada;
 
       enviarJSON(response, tareaActualizada);
+
+      // GENERA LOG
+      logOperacion(
+        method,
+        pathname,
+        200,
+        `Tarea con ID ${id} actualizada. Campos: ${Object.keys(data).join(
+          ", "
+        )}`
+      );
       return;
     }
 
@@ -286,6 +379,15 @@ const servidor = http.createServer(async (request, response) => {
       const indice = tareas.findIndex((t) => t.id === id);
 
       if (indice === -1) {
+        // GENERA LOG
+        logOperacion(
+          method,
+          pathname,
+          404,
+          `Tarea con ID ${id} no encontrada para eliminar`,
+          true
+        );
+
         enviarJSON(response, { error: "Tarea no encontrada" }, 404);
         return;
       }
@@ -295,6 +397,9 @@ const servidor = http.createServer(async (request, response) => {
         mensaje: "Tarea eliminada",
         tarea: tareaEliminada,
       });
+      // GENERA LOG
+      logOperacion(method, pathname, 200, `Tarea con ID ${id} eliminada`);
+
       return;
     }
 
@@ -373,6 +478,9 @@ const servidor = http.createServer(async (request, response) => {
       `;
 
       enviarHTML(response, html);
+
+      // GENERA LOG
+      logOperacion(method, pathname, 200, "Interfaz web servida");
       return;
     }
 
@@ -394,8 +502,21 @@ const servidor = http.createServer(async (request, response) => {
       },
       404
     );
+
+    // GENERA LOG
+    logOperacion(method, pathname, 404, "Ruta no encontrada", true);
   } catch (error) {
     console.error("Error en el servidor:", error);
+
+    // GENERA LOG
+    logOperacion(
+      method,
+      pathname,
+      500,
+      `Error interno del servidor: ${error.message}`,
+      true
+    );
+
     enviarJSON(
       response,
       { error: "Error interno del servidor", detalle: error.message },
