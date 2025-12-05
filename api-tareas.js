@@ -15,6 +15,8 @@ let tareas = [
     descripcion: "Completar tutoriales básicos",
     completada: false,
     prioridad: "alta",
+    fechaCreacion: new Date("2025-11-01T10:00:00Z").toISOString(),
+    fechaFinalizacion: null,
   },
   {
     id: 2,
@@ -22,6 +24,8 @@ let tareas = [
     descripcion: "Crear servidor básico",
     completada: true,
     prioridad: "media",
+    fechaCreacion: new Date("2025-11-05T12:00:00Z").toISOString(),
+    fechaFinalizacion: new Date("2025-12-04T15:30:00Z").toISOString(),
   },
 ];
 
@@ -105,6 +109,10 @@ function obtenerCuerpo(request) {
 
 // Middleware de validación de esquemas
 async function validarEsquema(request, response, esquema) {
+  const { method } = request;
+  const parsedUrl = url.parse(request.url, true);
+  const { pathname } = parsedUrl;
+
   try {
     const data = await obtenerCuerpo(request);
     const { error, value } = esquema.validate(data, { abortEarly: false });
@@ -139,11 +147,17 @@ async function validarEsquema(request, response, esquema) {
 
     return value;
   } catch (error) {
+    const statusCode = 400;
+    const mensajeLog =
+      error.message === "JSON inválido"
+        ? "Formato de cuerpo de solicitud inválido (JSON)"
+        : `Error al leer el cuerpo: ${error.message}`;
+
     if (error.message === "JSON inválido") {
       enviarJSON(
         response,
         { error: "Formato de cuerpo de solicitud inválido (JSON)" },
-        400
+        statusCode
       );
     } else {
       enviarJSON(
@@ -152,7 +166,7 @@ async function validarEsquema(request, response, esquema) {
           error: "Error al leer el cuerpo de la solicitud",
           detalle: error.message,
         },
-        400
+        statusCode
       );
     }
     // GENERA LOG
@@ -205,6 +219,34 @@ function autenticarAPIKey(request, response, parsedUrl) {
   }
 }
 
+// Funciones para Estadísticas
+function calcularEstadisticas() {
+  const tareasPorPrioridad = tareas.reduce(
+    (acc, tarea) => {
+      acc[tarea.prioridad] = (acc[tarea.prioridad] || 0) + 1;
+      return acc;
+    },
+    { alta: 0, media: 0, baja: 0 }
+  );
+
+  const completadasPorDia = tareas
+    .filter((t) => t.completada && t.fechaFinalizacion)
+    .reduce((acc, tarea) => {
+      const fecha = tarea.fechaFinalizacion.split("T")[0];
+      acc[fecha] = (acc[fecha] || 0) + 1;
+      return acc;
+    }, {});
+
+  const noCompletadas = tareas.filter((t) => !t.completada).length;
+
+  return {
+    totalTareas: tareas.length,
+    noCompletadas: noCompletadas,
+    tareasPorPrioridad,
+    completadasPorDia,
+  };
+}
+
 // Servidor principal
 const servidor = http.createServer(async (request, response) => {
   const { method } = request;
@@ -219,6 +261,15 @@ const servidor = http.createServer(async (request, response) => {
     }
     // Rutas de la API REST
 
+    // GET /api/tareas/stats - Obtener Estadísticas
+    if (method === "GET" && pathname === "/api/tareas/stats") {
+      const stats = calcularEstadisticas();
+      enviarJSON(response, stats);
+
+      // GENERA LOG
+      logOperacion(method, pathname, 200, "Estadísticas generadas");
+      return;
+    }
     // GET /api/tareas - Listar tareas
     if (method === "GET" && pathname === "/api/tareas") {
       let resultados = [...tareas];
@@ -262,7 +313,13 @@ const servidor = http.createServer(async (request, response) => {
 
     // GET /api/tareas/:id - Obtener tarea específica
     if (method === "GET" && pathname.startsWith("/api/tareas/")) {
-      const id = parseInt(pathname.split("/")[3]);
+      const idStr = pathname.split("/")[3];
+      if (!idStr || isNaN(parseInt(idStr))) {
+        if (idStr !== "stats") {
+        }
+      }
+
+      const id = parseInt(idStr);
       const tarea = tareas.find((t) => t.id === id);
 
       if (!tarea) {
@@ -298,6 +355,7 @@ const servidor = http.createServer(async (request, response) => {
         completada: false,
         prioridad: data.prioridad,
         fechaCreacion: new Date().toISOString(),
+        fechaFinalizacion: null,
       };
 
       tareas.push(nuevaTarea);
@@ -355,8 +413,22 @@ const servidor = http.createServer(async (request, response) => {
         return;
       }
 
+      const tareaOriginal = tareas[indice];
+
+      let nuevaFechaFinalizacion = tareaOriginal.fechaFinalizacion;
+      if (data.completada === true && tareaOriginal.completada === false) {
+        nuevaFechaFinalizacion = new Date().toISOString();
+      } else if (data.completada === false) {
+        nuevaFechaFinalizacion = null;
+      }
+
       // Actualizar solo los campos proporcionados y validados
-      const tareaActualizada = { ...tareas[indice], ...data };
+      const tareaActualizada = {
+        ...tareaOriginal,
+        ...data,
+        fechaFinalizacion: nuevaFechaFinalizacion,
+      };
+
       tareas[indice] = tareaActualizada;
 
       enviarJSON(response, tareaActualizada);
@@ -405,6 +477,7 @@ const servidor = http.createServer(async (request, response) => {
 
     // GET / - Interfaz web
     if (method === "GET" && pathname === "/") {
+      const stats = calcularEstadisticas();
       const html = `
 <!DOCTYPE html>
         <html lang="es">
@@ -418,6 +491,7 @@ const servidor = http.createServer(async (request, response) => {
             .method { font-weight: bold; color: #007acc; }
             code { background: #e8e8e8; padding: 2px 4px; border-radius: 3px; }
             pre { background: #f8f8f8; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            .stats-box { border: 1px solid #ccc; padding: 15px; margin-top: 20px; border-radius: 5px; background: #e6f7ff; }
           </style>
         </head>
         <body>
@@ -426,12 +500,24 @@ const servidor = http.createServer(async (request, response) => {
 
           <h2>🔒 Autenticación</h2>
           <p><strong>Clave de ejemplo:</strong> <code>${API_KEY_SECRETA}</code></p>
+          
+          <div class="stats-box">
+            <h3>📊 Estadísticas Rápidas</h3>
+            <p><strong>Total de Tareas:</strong> ${stats.totalTareas}</p>
+            <p><strong>Pendientes:</strong> ${stats.noCompletadas}</p>
+            <p><strong>Por Prioridad:</strong> Alta (${stats.tareasPorPrioridad.alta}), Media (${stats.tareasPorPrioridad.media}), Baja (${stats.tareasPorPrioridad.baja})</p>
+          </div>
 
           <h2>📋 Endpoints Disponibles</h2>
 
           <div class="endpoint">
             <span class="method">GET</span> <code>/api/tareas</code>
             <p>Listar todas las tareas. Parámetros opcionales: <code>completada</code>, <code>prioridad</code>, <code>q</code> (búsqueda)</p>
+          </div>
+          
+          <div class="endpoint">
+            <span class="method">GET</span> <code>/api/tareas/stats</code>
+            <p>Obtener estadísticas de tareas (Por prioridad y Completadas por día). <strong>Requiere API Key.</strong></p>
           </div>
 
           <div class="endpoint">
@@ -451,7 +537,7 @@ const servidor = http.createServer(async (request, response) => {
 
           <div class="endpoint">
             <span class="method">PUT</span> <code>/api/tareas/:id</code>
-            <p>Actualizar tarea existente (<strong>Validación:</strong> requiere al menos un campo válido. <code>completada</code> debe ser booleano, <code>prioridad</code> debe ser alta|media|baja)</p>
+            <p>Actualizar tarea existente (<strong>Validación:</strong> requiere al menos un campo válido. <code>completada</code> debe ser booleano, <code>prioridad</code> debe ser alta|media|baja). <strong>Si se completa, se registra la fecha.</strong></p>
           </div>
 
           <div class="endpoint">
@@ -460,17 +546,14 @@ const servidor = http.createServer(async (request, response) => {
           </div>
 
           <h2>🧪 Ejemplos de Uso (con API Key)</h2>
-          <h3>Listar tareas con filtro (requiere API Key):</h3>
+          <h3>Obtener Estadísticas</h3>
+          <pre>curl -H "X-API-Key: ${API_KEY_SECRETA}" "http://localhost:3000/api/tareas/stats"</pre>
+
+          <h3>Listar tareas con filtro</h3>
           <pre>curl -H "X-API-Key: ${API_KEY_SECRETA}" "http://localhost:3000/api/tareas?completada=false"</pre>
 
-          <h3>Crear tarea (requiere API Key):</h3>
+          <h3>Crear tarea</h3>
           <pre>curl -X POST -H "Content-Type: application/json" -H "X-API-Key: ${API_KEY_SECRETA}" -d '{"titulo":"Aprender HTTP","descripcion":"Estudiar protocolos web"}' http://localhost:3000/api/tareas</pre>
-
-          <h3>Buscar tareas (requiere API Key):</h3>
-          <pre>curl "http://localhost:3000/api/tareas?q=aprender&api-key=${API_KEY_SECRETA}"</pre>
-
-          <h3>Filtrar por estado:</h3>
-          <pre>curl "http://localhost:3000/api/tareas?completada=false"</pre>
 
           <p><strong>Estado actual:</strong> ${tareas.length} tareas registradas</p>
         </body>
@@ -494,6 +577,7 @@ const servidor = http.createServer(async (request, response) => {
         disponibles: [
           "GET /",
           "GET /api/tareas",
+          "GET /api/tareas/stats",
           "POST /api/tareas",
           "GET /api/tareas/:id",
           "PUT /api/tareas/:id",
