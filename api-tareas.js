@@ -2,6 +2,7 @@ const http = require("http");
 const url = require("url");
 const fs = require("fs").promises;
 const path = require("path");
+const Joi = require("joi");
 
 // Configuración de Autenticación
 const API_KEY_SECRETA = "mi-clave-secreta-de-api-2025";
@@ -25,6 +26,26 @@ let tareas = [
 ];
 
 let siguienteId = 3;
+
+// Definición de esquema joi para POST
+const EsquemaTareaPOST = Joi.object({
+  titulo: Joi.string().trim().min(3).max(100).required(),
+  descripcion: Joi.string().trim().allow("").max(500).optional(),
+  prioridad: Joi.string()
+    .valid("alta", "media", "baja")
+    .default("media")
+    .optional(),
+  completada: Joi.any().forbidden(),
+  id: Joi.any().forbidden(),
+});
+
+// Definición de esquema joi para PUT
+const EsquemaTareaPUT = Joi.object({
+  titulo: Joi.string().trim().min(3).max(100).optional(),
+  descripcion: Joi.string().trim().allow("").max(500).optional(),
+  completada: Joi.boolean().optional(),
+  prioridad: Joi.string().valid("alta", "media", "baja").optional(),
+}).min(1);
 
 // Funciones helper
 function enviarJSON(response, data, statusCode = 200) {
@@ -55,6 +76,10 @@ function obtenerCuerpo(request) {
 
     request.on("end", () => {
       try {
+        if (!body) {
+          resolve({}); // Cuerpo vacío, resolvemos con un objeto vacío
+          return;
+        }
         resolve(JSON.parse(body));
       } catch (error) {
         reject(new Error("JSON inválido"));
@@ -63,6 +88,51 @@ function obtenerCuerpo(request) {
 
     request.on("error", reject);
   });
+}
+
+// Middleware de validación de esquemas
+async function validarEsquema(request, response, esquema) {
+  try {
+    const data = await obtenerCuerpo(request);
+    const { error, value } = esquema.validate(data, { abortEarly: false });
+
+    if (error) {
+      const erroresDetallados = error.details.map((d) => ({
+        campo: d.context.key,
+        mensaje: d.message,
+      }));
+
+      enviarJSON(
+        response,
+        {
+          error: "Error de validación de datos",
+          detalles: erroresDetallados,
+        },
+        400
+      );
+      return null;
+    }
+
+    return value;
+  } catch (error) {
+    if (error.message === "JSON inválido") {
+      enviarJSON(
+        response,
+        { error: "Formato de cuerpo de solicitud inválido (JSON)" },
+        400
+      );
+    } else {
+      enviarJSON(
+        response,
+        {
+          error: "Error al leer el cuerpo de la solicitud",
+          detalle: error.message,
+        },
+        400
+      );
+    }
+    return null;
+  }
 }
 
 // Middleware de Autenticación
@@ -159,21 +229,17 @@ const servidor = http.createServer(async (request, response) => {
       return;
     }
 
-    // POST /api/tareas - Crear nueva tarea
+    // POST /api/tareas - Crear nueva tarea (¡VALIDACIÓN AÑADIDA!)
     if (method === "POST" && pathname === "/api/tareas") {
-      const data = await obtenerCuerpo(request);
-
-      if (!data.titulo) {
-        enviarJSON(response, { error: "El título es requerido" }, 400);
-        return;
-      }
+      const data = await validarEsquema(request, response, EsquemaTareaPOST);
+      if (!data) return;
 
       const nuevaTarea = {
         id: siguienteId++,
         titulo: data.titulo,
         descripcion: data.descripcion || "",
         completada: false,
-        prioridad: data.prioridad || "media",
+        prioridad: data.prioridad,
         fechaCreacion: new Date().toISOString(),
       };
 
@@ -182,10 +248,12 @@ const servidor = http.createServer(async (request, response) => {
       return;
     }
 
-    // PUT /api/tareas/:id - Actualizar tarea
+    // PUT /api/tareas/:id - Actualizar tarea (¡VALIDACIÓN AÑADIDA!)
     if (method === "PUT" && pathname.startsWith("/api/tareas/")) {
       const id = parseInt(pathname.split("/")[3]);
-      const data = await obtenerCuerpo(request);
+
+      const data = await validarEsquema(request, response, EsquemaTareaPUT);
+      if (!data) return;
 
       const indice = tareas.findIndex((t) => t.id === id);
       if (indice === -1) {
@@ -193,7 +261,18 @@ const servidor = http.createServer(async (request, response) => {
         return;
       }
 
-      // Actualizar solo los campos proporcionados
+      // Si el esquema está vacío, Joi.min(1) debería haber fallado
+      // Pero para mayor seguridad:
+      if (Object.keys(data).length === 0) {
+        enviarJSON(
+          response,
+          { error: "Debe proporcionar al menos un campo para actualizar" },
+          400
+        );
+        return;
+      }
+
+      // Actualizar solo los campos proporcionados y validados
       const tareaActualizada = { ...tareas[indice], ...data };
       tareas[indice] = tareaActualizada;
 
@@ -222,7 +301,7 @@ const servidor = http.createServer(async (request, response) => {
     // GET / - Interfaz web
     if (method === "GET" && pathname === "/") {
       const html = `
-        <!DOCTYPE html>
+<!DOCTYPE html>
         <html lang="es">
         <head>
           <meta charset="UTF-8">
@@ -257,7 +336,7 @@ const servidor = http.createServer(async (request, response) => {
 
           <div class="endpoint">
             <span class="method">POST</span> <code>/api/tareas</code>
-            <p>Crear nueva tarea</p>
+            <p>Crear nueva tarea (<strong>Validación:</strong> <code>titulo</code> requerido, <code>prioridad</code> debe ser alta|media|baja)</p>
             <pre>{
   "titulo": "Mi nueva tarea",
   "descripcion": "Descripción opcional",
@@ -267,7 +346,7 @@ const servidor = http.createServer(async (request, response) => {
 
           <div class="endpoint">
             <span class="method">PUT</span> <code>/api/tareas/:id</code>
-            <p>Actualizar tarea existente</p>
+            <p>Actualizar tarea existente (<strong>Validación:</strong> requiere al menos un campo válido. <code>completada</code> debe ser booleano, <code>prioridad</code> debe ser alta|media|baja)</p>
           </div>
 
           <div class="endpoint">

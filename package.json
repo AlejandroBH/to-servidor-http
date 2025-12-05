@@ -9,5 +9,8 @@
   "keywords": [],
   "author": "Alejandro Barrera <alejandro91dark@hotmail.es>",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "joi": "^18.0.2"
+  }
 }
