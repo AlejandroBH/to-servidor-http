@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestor de Tareas Cliente</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <h1>📋 Gestor de Tareas</h1>
+
+    <div class="header-actions">
+      <input
+        type="text"
+        id="api-key-input"
+        placeholder="Ingresa tu API Key"
+        value="mi-clave-secreta-de-api-2025"
+      />
+      <button onclick="cargarTareas()">🔑 Cargar Tareas</button>
+    </div>
+
+    <h2>➕ Crear Nueva Tarea</h2>
+    <form id="form-crear">
+      <label for="titulo">Título:</label>
+      <input type="text" id="titulo" required />
+
+      <label for="descripcion">Descripción:</label>
+      <textarea id="descripcion"></textarea>
+
+      <label for="prioridad">Prioridad:</label>
+      <select id="prioridad">
+        <option value="media">Media</option>
+        <option value="alta">Alta</option>
+        <option value="baja">Baja</option>
+      </select>
+
+      <button type="submit">Crear Tarea</button>
+    </form>
+
+    <h2>📑 Listado de Tareas</h2>
+    <div class="header-actions">
+      <input
+        type="search"
+        id="busqueda"
+        placeholder="Buscar por título o descripción..."
+        onkeyup="cargarTareas()"
+      />
+      <select id="filtro-completada" onchange="cargarTareas()">
+        <option value="">Mostrar Todas</option>
+        <option value="false">Pendientes</option>
+        <option value="true">Completadas</option>
+      </select>
+      <select id="filtro-prioridad" onchange="cargarTareas()">
+        <option value="">Todas las Prioridades</option>
+        <option value="alta">Alta</option>
+        <option value="media">Media</option>
+        <option value="baja">Baja</option>
+      </select>
+    </div>
+
+    <div id="tareas-lista">
+      <p>Ingresa la API Key y haz clic en "Cargar Tareas".</p>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

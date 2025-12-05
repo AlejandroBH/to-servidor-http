@@ -4,13 +4,15 @@
   "description": "",
   "main": "api-tareas.js",
   "scripts": {
-    "start": "node api-tareas"
+    "server": "node api-tareas",
+    "client": "npx live-server"
   },
   "keywords": [],
   "author": "Alejandro Barrera <alejandro91dark@hotmail.es>",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "joi": "^18.0.2"
+    "joi": "^18.0.2",
+    "live-server": "^1.2.2"
   }
 }
