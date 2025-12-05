@@ -3,6 +3,9 @@ const url = require("url");
 const fs = require("fs").promises;
 const path = require("path");
 
+// Configuración de Autenticación
+const API_KEY_SECRETA = "mi-clave-secreta-de-api-2025";
+
 // Base de datos en memoria
 let tareas = [
   {
@@ -29,7 +32,7 @@ function enviarJSON(response, data, statusCode = 200) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
   });
   response.end(JSON.stringify(data, null, 2));
 }
@@ -62,6 +65,41 @@ function obtenerCuerpo(request) {
   });
 }
 
+// Middleware de Autenticación
+function autenticarAPIKey(request, response, parsedUrl) {
+  const { method, headers } = request;
+  const { pathname, query } = parsedUrl;
+
+  if (method === "OPTIONS") {
+    enviarJSON(response, null, 204); // No Content
+    return false;
+  }
+
+  const esRutaPublica =
+    pathname === "/" ||
+    (pathname === "/api/tareas" &&
+      !query.completada &&
+      !query.prioridad &&
+      !query.q);
+
+  if (esRutaPublica) {
+    return true;
+  }
+
+  const apiKey = headers["x-api-key"] || query["api-key"];
+
+  if (apiKey === API_KEY_SECRETA) {
+    return true;
+  } else {
+    enviarJSON(
+      response,
+      { error: "Acceso no autorizado. Se requiere una 'X-API-Key' válida." },
+      401
+    );
+    return false;
+  }
+}
+
 // Servidor principal
 const servidor = http.createServer(async (request, response) => {
   const { method } = request;
@@ -69,6 +107,11 @@ const servidor = http.createServer(async (request, response) => {
   const { pathname, query } = parsedUrl;
 
   try {
+    // Aplicar Middleware de Autenticación
+    const autenticado = autenticarAPIKey(request, response, parsedUrl);
+    if (!autenticado) {
+      return;
+    }
     // Rutas de la API REST
 
     // GET /api/tareas - Listar tareas
@@ -197,6 +240,9 @@ const servidor = http.createServer(async (request, response) => {
           <h1>🚀 API de Gestión de Tareas</h1>
           <p>Servidor HTTP creado con Node.js puro</p>
 
+          <h2>🔒 Autenticación</h2>
+          <p><strong>Clave de ejemplo:</strong> <code>${API_KEY_SECRETA}</code></p>
+
           <h2>📋 Endpoints Disponibles</h2>
 
           <div class="endpoint">
@@ -229,17 +275,15 @@ const servidor = http.createServer(async (request, response) => {
             <p>Eliminar tarea</p>
           </div>
 
-          <h2>🧪 Ejemplos de Uso</h2>
-          <h3>Listar tareas:</h3>
-          <pre>curl http://localhost:3000/api/tareas</pre>
+          <h2>🧪 Ejemplos de Uso (con API Key)</h2>
+          <h3>Listar tareas con filtro (requiere API Key):</h3>
+          <pre>curl -H "X-API-Key: ${API_KEY_SECRETA}" "http://localhost:3000/api/tareas?completada=false"</pre>
 
-          <h3>Crear tarea:</h3>
-          <pre>curl -X POST -H "Content-Type: application/json" \
-  -d '{"titulo":"Aprender HTTP","descripcion":"Estudiar protocolos web"}' \
-  http://localhost:3000/api/tareas</pre>
+          <h3>Crear tarea (requiere API Key):</h3>
+          <pre>curl -X POST -H "Content-Type: application/json" -H "X-API-Key: ${API_KEY_SECRETA}" -d '{"titulo":"Aprender HTTP","descripcion":"Estudiar protocolos web"}' http://localhost:3000/api/tareas</pre>
 
-          <h3>Buscar tareas:</h3>
-          <pre>curl "http://localhost:3000/api/tareas?q=aprender"</pre>
+          <h3>Buscar tareas (requiere API Key):</h3>
+          <pre>curl "http://localhost:3000/api/tareas?q=aprender&api-key=${API_KEY_SECRETA}"</pre>
 
           <h3>Filtrar por estado:</h3>
           <pre>curl "http://localhost:3000/api/tareas?completada=false"</pre>
